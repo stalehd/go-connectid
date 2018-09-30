@@ -28,6 +28,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ExploratoryEngineering/logging"
 )
 
 const (
@@ -69,7 +71,6 @@ func refreshAccessToknes(storage Storage, config ClientConfig, session Session) 
 	params.Set("refresh_token", session.refreshToken)
 	params.Set("client_id", config.ClientID)
 	formData := params.Encode()
-
 	refreshURL := buildConnectURL(config, connectTokenPath)
 	req, err := http.NewRequest("POST", refreshURL.String(), bytes.NewBufferString(formData))
 	if err != nil {
@@ -79,6 +80,7 @@ func refreshAccessToknes(storage Storage, config ClientConfig, session Session) 
 	req.SetBasicAuth(config.ClientID, config.Password)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Content-Length", strconv.Itoa(len(formData)))
+	req.Header.Set("Accept", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Printf("Got error doing request for session %s: %v", session.id, err)
@@ -86,6 +88,7 @@ func refreshAccessToknes(storage Storage, config ClientConfig, session Session) 
 	}
 	if resp.StatusCode != http.StatusOK {
 		log.Printf("Got status %d doing request for session %s.", resp.StatusCode, session.id)
+		logging.Warning("Update for session %s failed. Response = %v, session = %+v, formData = %s", session.id, resp.StatusCode, session, formData)
 		return
 	}
 	var tokens tokenResponse
@@ -111,6 +114,7 @@ func refreshAccessToknes(storage Storage, config ClientConfig, session Session) 
 	if err := storage.UpdateSession(updatedSession); err != nil {
 		log.Printf("Unable to update session %v: %v", updatedSession.id, err)
 	}
+	logging.Warning("Session updated: %+v", updatedSession)
 }
 
 func refreshTokens(storage Storage, config ClientConfig, lookAhead time.Duration) {
@@ -124,7 +128,13 @@ func refreshTokens(storage Storage, config ClientConfig, lookAhead time.Duration
 		// The session check interval is assumed to be a lot shorter than the session length.
 		// Check for 2x the session check interval just to be sure.
 		if (session.expires + 2*sessionCheckInterval) < time.Now().Add(lookAhead).Unix() {
-			go refreshAccessToknes(storage, config, session)
+			logging.Warning("Refreshing session %+v", session)
+			refreshAccessToknes(storage, config, session)
+		}
+
+		if session.expires < time.Now().Unix() {
+			logging.Warning("Removing session %s from storage", session.id)
+			storage.DeleteSession(session.id)
 		}
 	}
 }

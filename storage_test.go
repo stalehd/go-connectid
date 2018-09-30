@@ -79,7 +79,11 @@ func sessionStorageTest(storage Storage, t *testing.T) {
 	if len(sessions) != 1 {
 		t.Fatalf("Found %d sessions, expected 1", len(sessions))
 	}
-
+	for _, v := range sessions {
+		if v.id == "" || v.accessToken == "" || v.refreshToken == "" {
+			t.Fatal("Invalid token from list")
+		}
+	}
 	storage.DeleteSession(sessions[0].id)
 }
 
